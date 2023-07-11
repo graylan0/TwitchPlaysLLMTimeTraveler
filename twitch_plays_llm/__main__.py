@@ -1,8 +1,10 @@
 import asyncio
 import json
 import openai
+
 from pydantic import BaseModel
 from twitchio.ext import commands
+
 
 # Load the configuration file
 with open('config.json') as config_file:
@@ -14,16 +16,54 @@ channel_name = config['twitch']['hostchannel']
 openai_api_key = config['openai']['api_key']
 openai.api_key = openai_api_key
 
+
+class CharacterProfile:
+    def __init__(self, name, age, occupation, skills, relationships):
+        self.name = name
+        self.age = age
+        self.occupation = occupation
+        self.skills = skills
+        self.relationships = relationships
+
+
 class CharacterMemory:
     def __init__(self):
         self.attributes = {}
         self.past_actions = []
+        self.color_code = "white"  # default color
+        self.profile = CharacterProfile("John Doe", 40, "Detective", ["Investigation", "Hand-to-hand combat"], {"Sarah": "Wife", "Tom": "Partner"})
+        self.thoughts_file = "thoughts.txt"
 
     def update_attribute(self, attribute, value):
         self.attributes[attribute] = value
+        if attribute == "mood":
+            self.update_color_code(value)
+
+    def update_color_code(self, mood):
+        if mood == "happy":
+            self.color_code = "yellow"
+        elif mood == "sad":
+            self.color_code = "blue"
+        elif mood == "angry":
+            self.color_code = "red"
+        else:
+            self.color_code = "white"
 
     def add_past_action(self, action):
         self.past_actions.append(action)
+
+    def get_memory_prompt(self):
+        profile_info = f"The character, {self.profile.name}, is a {self.profile.age} year old {self.profile.occupation}. They have skills in {', '.join(self.profile.skills)} and relationships with {', '.join([f'{k} ({v})' for k, v in self.profile.relationships.items()])}."
+        return profile_info + f" The character, colored {self.color_code}, has done the following actions: " + ", ".join(self.past_actions)
+
+    def write_thoughts(self, thought):
+        with open(self.thoughts_file, "a") as file:
+            file.write(thought + "\n")
+
+    def read_thoughts(self):
+        with open(self.thoughts_file, "r") as file:
+            return file.readlines()
+
 
 class StoryEntry(BaseModel):
     user_action: str
