@@ -1,13 +1,14 @@
 import asyncio
 import json
 import openai
+import numpy as np
+from sklearn.feature_extraction.text import CountVectorizer
 
 from pydantic import BaseModel
 from twitchio.ext import commands
 
-
 # Load the configuration file
-with open('config.json') as config_file:
+with open('C:\\Users\\gray00\\gpt\\gamejam_twitch\\config.json') as config_file:
     config = json.load(config_file)
 
 # Now you can access your keys
@@ -15,7 +16,6 @@ client_id = config['twitch']['clientkey']
 channel_name = config['twitch']['hostchannel']
 openai_api_key = config['openai']['api_key']
 openai.api_key = openai_api_key
-
 
 class CharacterProfile:
     def __init__(self, name, age, occupation, skills, relationships):
@@ -25,8 +25,10 @@ class CharacterProfile:
         self.skills = skills
         self.relationships = relationships
 
-
 class CharacterMemory:
+    MAX_PAST_ACTIONS = 100  # maximum number of past actions to store in memory
+    PAST_ACTIONS_FILE = "past_actions.txt"  # file to store older actions
+
     def __init__(self):
         self.attributes = {}
         self.past_actions = []
@@ -51,6 +53,10 @@ class CharacterMemory:
 
     def add_past_action(self, action):
         self.past_actions.append(action)
+        if len(self.past_actions) > self.MAX_PAST_ACTIONS:
+            oldest_action = self.past_actions.pop(0)  # remove the oldest action
+            with open(self.PAST_ACTIONS_FILE, "a") as file:
+                file.write(oldest_action + "\n")  # write the oldest action to the file
 
     def get_memory_prompt(self):
         profile_info = f"The character, {self.profile.name}, is a {self.profile.age} year old {self.profile.occupation}. They have skills in {', '.join(self.profile.skills)} and relationships with {', '.join([f'{k} ({v})' for k, v in self.profile.relationships.items()])}."
@@ -64,6 +70,49 @@ class CharacterMemory:
         with open(self.thoughts_file, "r") as file:
             return file.readlines()
 
+class VectorDatabase:
+    def __init__(self):
+        self.vectorizer = CountVectorizer()
+        self.vector_db = None
+
+    def update_database(self, text):
+        text_list = [text]
+        text_vectors = self.vectorizer.fit_transform(text_list).toarray()
+        if self.vector_db is None:
+            self.vector_db = text_vectors
+        else:
+            self.vector_db = np.vstack((self.vector_db, text_vectors))
+
+    def get_similarity(self, text):
+        text_vector = self.vectorizer.transform([text]).toarray()
+        similarity_scores = np.dot(self.vector_db, text_vector.T)
+        return similarity_scores
+
+class TridequeMatrix:
+    def __init__(self, size):
+        self.matrix = np.zeros((size, size, size))
+
+    def update_matrix(self, x, y, z, value):
+        self.matrix[x][y][z] = value
+
+    def get_value(self, x, y, z):
+        return self.matrix[x][y][z]
+
+class AdvancedCharacterMemory(CharacterMemory):
+    def __init__(self):
+        super().__init__()
+        self.vector_db = VectorDatabase()
+        self.trideque_matrix = TridequeMatrix(10)  # Initialize a 10x10x10 Trideque matrix
+
+    def update_memory(self, text, use_vector_db=True):
+        if use_vector_db:
+            self.vector_db.update_database(text)
+        else:
+            # Update Trideque matrix based on some logic
+            pass
+
+    def get_similarity(self, text):
+        return self.vector_db.get_similarity(text)
 
 class StoryEntry(BaseModel):
     user_action: str
@@ -76,7 +125,7 @@ class Proposal(BaseModel):
 
 class StoryGenerator:
     def __init__(self):
-        self.character_memory = CharacterMemory()
+        self.character_memory = AdvancedCharacterMemory()
         self.past_story_entries = [
             StoryEntry(
                 user_action='',
@@ -108,8 +157,6 @@ class StoryGenerator:
         )
         return next_narration
 
-
-
 class VoteHandler:
     def __init__(self):
         self.proposals: list[Proposal] = []
@@ -132,7 +179,6 @@ class VoteHandler:
     def reset(self):
         """ "Clears all vote options"""
         self.proposals = []
-
 
 class Bot(commands.Bot):
     max_message_len = 500  # Twitch has a 500 character limit
@@ -181,9 +227,6 @@ class Bot(commands.Bot):
         if self.background_task is None:
             self.background_task = asyncio.create_task(self.background_logic(ctx))
 
-    # asyncio.create_task(something to run in the background without awaiting)
-    # self.backgroundTask() = asyncio.create_task()
-    # if self.backgroundTask() is not None:
     async def background_logic(self, ctx: commands.Context):
         await asyncio.sleep(10)
 
@@ -220,3 +263,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
