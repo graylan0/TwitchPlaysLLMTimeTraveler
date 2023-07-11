@@ -1,12 +1,8 @@
 import asyncio
 import json
-
-# import time
 import openai
-
 from pydantic import BaseModel
 from twitchio.ext import commands
-
 
 # Load the configuration file
 with open('config.json') as config_file:
@@ -18,22 +14,29 @@ channel_name = config['twitch']['hostchannel']
 openai_api_key = config['openai']['api_key']
 openai.api_key = openai_api_key
 
+class CharacterMemory:
+    def __init__(self):
+        self.attributes = {}
+        self.past_actions = []
 
-# BaseModel is similar to a dataclass (used to store data in a structure way)
+    def update_attribute(self, attribute, value):
+        self.attributes[attribute] = value
+
+    def add_past_action(self, action):
+        self.past_actions.append(action)
+
 class StoryEntry(BaseModel):
     user_action: str
     narration_result: str
-
 
 class Proposal(BaseModel):
     user: str
     message: str
     vote: int
 
-
 class StoryGenerator:
     def __init__(self):
-        # TODO: Dynamically generate initial prompt
+        self.character_memory = CharacterMemory()
         self.past_story_entries = [
             StoryEntry(
                 user_action='',
@@ -42,33 +45,19 @@ class StoryGenerator:
         ]
 
     def construct_prompt_messages(self, user_action: str):
-        # === ChatCompletions API reference ===
-        # system: tells ChatGPT what it's role is/the context of its responses
-        # assistant: pseudo-history of messages from openai model
-        # user: pseudo-history of messages from user
-        #
-        # Bot will then try to complete the conversation
         messages = [
             {
                 'role': 'system',
                 'content': 'You are a storyteller that generates the next event in a story based on the action a user says. The story takes place in 1910 and the main character is a middle aged man. At each turn, the user says an action and you reply with a short continuation of the story outlining the events that happen in the story based on the action the user performed.',
             },
         ]
-        for story_entry in self.past_story_entries:
-            if story_entry.user_action:
-                messages += [{'role': 'user', 'content': story_entry.user_action}]
-            if story_entry.narration_result:
-                messages += [
-                    {
-                        'role': 'assistant',
-                        'content': story_entry.narration_result,
-                    }
-                ]
+        for action in self.character_memory.past_actions:
+            messages.append({'role': 'user', 'content': action})
         messages.append({'role': 'user', 'content': user_action})
         return messages
 
     def generate_next_story_narration(self, user_action: str):
-        """Generates the continuation of the story given a user action"""
+        self.character_memory.add_past_action(user_action)
         response = openai.ChatCompletion.create(
             model='gpt-3.5-turbo',
             messages=self.construct_prompt_messages(user_action),
@@ -78,6 +67,7 @@ class StoryGenerator:
             StoryEntry(user_action=user_action, narration_result=next_narration)
         )
         return next_narration
+
 
 
 class VoteHandler:
