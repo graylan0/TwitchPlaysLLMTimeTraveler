@@ -1,7 +1,7 @@
 import asyncio
 import sys
 import logging
-
+from typing import Optional
 from contextlib import suppress
 
 from twitchio.ext import commands
