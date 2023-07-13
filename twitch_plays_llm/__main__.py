@@ -1,266 +1,40 @@
-import asyncio
-import json
+from argparse import ArgumentParser
+
 import openai
-import numpy as np
-from sklearn.feature_extraction.text import CountVectorizer
+import uvicorn
 
-from pydantic import BaseModel
-from twitchio.ext import commands
+from uvicorn_loguru_integration import run_uvicorn_loguru
 
-# Load the configuration file
-with open('C:\\Users\\gray00\\gpt\\gamejam_twitch\\config.json') as config_file:
-    config = json.load(config_file)
-
-# Now you can access your keys
-client_id = config['twitch']['clientkey']
-channel_name = config['twitch']['hostchannel']
-openai_api_key = config['openai']['api_key']
-openai.api_key = openai_api_key
-
-class CharacterProfile:
-    def __init__(self, name, age, occupation, skills, relationships):
-        self.name = name
-        self.age = age
-        self.occupation = occupation
-        self.skills = skills
-        self.relationships = relationships
-
-class CharacterMemory:
-    MAX_PAST_ACTIONS = 100  # maximum number of past actions to store in memory
-    PAST_ACTIONS_FILE = "past_actions.txt"  # file to store older actions
-
-    def __init__(self):
-        self.attributes = {}
-        self.past_actions = []
-        self.color_code = "white"  # default color
-        self.profile = CharacterProfile("John Doe", 40, "Detective", ["Investigation", "Hand-to-hand combat"], {"Sarah": "Wife", "Tom": "Partner"})
-        self.thoughts_file = "thoughts.txt"
-
-    def update_attribute(self, attribute, value):
-        self.attributes[attribute] = value
-        if attribute == "mood":
-            self.update_color_code(value)
-
-    def update_color_code(self, mood):
-        if mood == "happy":
-            self.color_code = "yellow"
-        elif mood == "sad":
-            self.color_code = "blue"
-        elif mood == "angry":
-            self.color_code = "red"
-        else:
-            self.color_code = "white"
-
-    def add_past_action(self, action):
-        self.past_actions.append(action)
-        if len(self.past_actions) > self.MAX_PAST_ACTIONS:
-            oldest_action = self.past_actions.pop(0)  # remove the oldest action
-            with open(self.PAST_ACTIONS_FILE, "a") as file:
-                file.write(oldest_action + "\n")  # write the oldest action to the file
-
-    def get_memory_prompt(self):
-        profile_info = f"The character, {self.profile.name}, is a {self.profile.age} year old {self.profile.occupation}. They have skills in {', '.join(self.profile.skills)} and relationships with {', '.join([f'{k} ({v})' for k, v in self.profile.relationships.items()])}."
-        return profile_info + f" The character, colored {self.color_code}, has done the following actions: " + ", ".join(self.past_actions)
-
-    def write_thoughts(self, thought):
-        with open(self.thoughts_file, "a") as file:
-            file.write(thought + "\n")
-
-    def read_thoughts(self):
-        with open(self.thoughts_file, "r") as file:
-            return file.readlines()
-
-class VectorDatabase:
-    def __init__(self):
-        self.vectorizer = CountVectorizer()
-        self.vector_db = None
-
-    def update_database(self, text):
-        text_list = [text]
-        text_vectors = self.vectorizer.fit_transform(text_list).toarray()
-        if self.vector_db is None:
-            self.vector_db = text_vectors
-        else:
-            self.vector_db = np.vstack((self.vector_db, text_vectors))
-
-    def get_similarity(self, text):
-        text_vector = self.vectorizer.transform([text]).toarray()
-        similarity_scores = np.dot(self.vector_db, text_vector.T)
-        return similarity_scores
-
-class TridequeMatrix:
-    def __init__(self, size):
-        self.matrix = np.zeros((size, size, size))
-
-    def update_matrix(self, x, y, z, value):
-        self.matrix[x][y][z] = value
-
-    def get_value(self, x, y, z):
-        return self.matrix[x][y][z]
-
-class AdvancedCharacterMemory(CharacterMemory):
-    def __init__(self):
-        super().__init__()
-        self.vector_db = VectorDatabase()
-        self.trideque_matrix = TridequeMatrix(10)  # Initialize a 10x10x10 Trideque matrix
-
-    def update_memory(self, text, use_vector_db=True):
-        if use_vector_db:
-            self.vector_db.update_database(text)
-        else:
-            # Update Trideque matrix based on some logic
-            pass
-
-    def get_similarity(self, text):
-        return self.vector_db.get_similarity(text)
-
-class StoryEntry(BaseModel):
-    user_action: str
-    narration_result: str
-
-class Proposal(BaseModel):
-    user: str
-    message: str
-    vote: int
-
-class StoryGenerator:
-    def __init__(self):
-        self.character_memory = AdvancedCharacterMemory()
-        self.past_story_entries = [
-            StoryEntry(
-                user_action='',
-                narration_result="You are a middle aged man in downtown Chicago, 1910. You're in a steak restaurant talking to the waiter as you just sat down.",
-            )
-        ]
-
-    def construct_prompt_messages(self, user_action: str):
-        messages = [
-            {
-                'role': 'system',
-                'content': 'You are a storyteller that generates the next event in a story based on the action a user says. The story takes place in 1910 and the main character is a middle aged man. At each turn, the user says an action and you reply with a short continuation of the story outlining the events that happen in the story based on the action the user performed.',
-            },
-        ]
-        for action in self.character_memory.past_actions:
-            messages.append({'role': 'user', 'content': action})
-        messages.append({'role': 'user', 'content': user_action})
-        return messages
-
-    def generate_next_story_narration(self, user_action: str):
-        self.character_memory.add_past_action(user_action)
-        response = openai.ChatCompletion.create(
-            model='gpt-3.5-turbo',
-            messages=self.construct_prompt_messages(user_action),
-        )
-        next_narration = response['choices'][0]['message']['content']
-        self.past_story_entries.append(
-            StoryEntry(user_action=user_action, narration_result=next_narration)
-        )
-        return next_narration
-
-class VoteHandler:
-    def __init__(self):
-        self.proposals: list[Proposal] = []
-
-    async def add_vote_option(self, username: str, message: str):
-        """ "Adds a vote option to the list of proposals. Expects '!voteoption <string>' as a user command"""
-        proposal = Proposal(user=username, message=message, vote=0)
-        print(proposal)
-        self.proposals.append(proposal)
-        return f'Option {len(self.proposals)} added: {message}'
-
-    async def add_vote(self, username: str, vote_option: int):
-        """ "Adds a vote to a currently existing proposal. Expects '!vote <int>' as a user command"""
-        for idx, proposal in enumerate(self.proposals):
-            if idx == vote_option - 1:
-                proposal.vote += 1
-                return f'Vote added for option {vote_option}. Current votes: {proposal.vote}'
-        return f'Vote option not found: {vote_option}'
-
-    def reset(self):
-        """ "Clears all vote options"""
-        self.proposals = []
-
-class Bot(commands.Bot):
-    max_message_len = 500  # Twitch has a 500 character limit
-
-    def __init__(self):
-        # Initialise our Bot with our access token, prefix and a list of channels to join on boot...
-        super().__init__(token=client_id, prefix='!', initial_channels=[channel_name])
-        self.generator = StoryGenerator()
-        self.vote_handler = VoteHandler()
-        self.background_task = None
-
-    async def event_ready(self):
-        """Function that runs when bot connects to server"""
-
-        print(f'Logged in as | {self.nick}')
-        print(f'User id is | {self.user_id}')
-        if self.generator.past_story_entries:
-            last_narration = self.generator.past_story_entries[-1].narration_result
-            await self.get_channel(channel_name).send(f'Story: {last_narration}')
-
-    @commands.command()
-    async def action(self, ctx: commands.Context):
-        """Trigger for user to perofrm an action within the game"""
-        user_action = self._extract_message_text(ctx)
-        await self._perform_action(user_action, ctx)
-
-    @commands.command()
-    async def say(self, ctx: commands.Context):
-        """Trigger for user to say something within the game"""
-        user_action = 'You say "' + self._extract_message_text(ctx) + '"'
-        await self._perform_action(user_action, ctx)
-
-    @commands.command()
-    async def vote(self, ctx: commands.Context):
-        await ctx.send(
-            await self.vote_handler.add_vote(
-                ctx.author.name, int(self._extract_message_text(ctx))
-            )
-        )
-
-    async def _perform_action(self, user_action: str, ctx: commands.Context):
-        """Continues the story by performing an action, communicating the result to the channel"""
-        await ctx.send(
-            await self.vote_handler.add_vote_option(ctx.author.name, user_action)
-        )
-        if self.background_task is None:
-            self.background_task = asyncio.create_task(self.background_logic(ctx))
-
-    async def background_logic(self, ctx: commands.Context):
-        await asyncio.sleep(10)
-
-        chosen_action = max(self.vote_handler.proposals, key=lambda x: x.vote)
-        action_index = self.vote_handler.proposals.index(chosen_action)
-        narration_result = self.generator.generate_next_story_narration(
-            chosen_action.message
-        )
-        message = f'Chose action {action_index + 1} ({chosen_action.vote} votes): {chosen_action.message} | {narration_result}'
-        await self._send_chunked(ctx, message)
-        self.vote_handler.reset()
-        self.background_task = None
-
-    async def _send_chunked(self, ctx: commands.Context, text: str):
-        while text:
-            suffix = '...' if len(text) >= self.max_message_len else ''
-            await ctx.send(text[: self.max_message_len - 3] + suffix)
-            await asyncio.sleep(2.0)
-            text = text[self.max_message_len - 3 :]
-
-    @staticmethod
-    def _extract_message_text(ctx: commands.Context) -> str:
-        """
-        Extract the text part of a user message after the command
-        (ie. "bar baz" from the message "!foo bar baz")
-        """
-        return ctx.message.content.split(' ', 1)[1]
-
+from .config import config
+from .llm_game import LlmGame
+from .llm_twitch_bot import LlmTwitchBot
+from .trideque import TriDeque
+from .memory import Memory
 
 def main():
-    bot = Bot()
-    bot.run()
+    parser = ArgumentParser(
+        description='Backend for Twitch-Plays-LLM, an interactive collaborative text-based twitch game'
+    )
+    sp = parser.add_subparsers(dest='action')
+    sp.add_parser('run')
+    args = parser.parse_args()
+
+    openai.api_key = config.openai_api_key
+
+    if args.action == 'run':
+        run_uvicorn_loguru(
+            uvicorn.Config(
+                'twitch_plays_llm.app:app',
+                host='0.0.0.0',
+                port=config.backend_port,
+                log_level='info',
+                reload=False,
+                workers=1,  # We need only 1 worker because otherwise multiple chatbots will be running
+            )
+        )
+    else:
+        assert False
 
 
 if __name__ == '__main__':
     main()
-
