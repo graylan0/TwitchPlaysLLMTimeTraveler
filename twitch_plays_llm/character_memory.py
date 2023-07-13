@@ -1,6 +1,16 @@
 import bisect
 import time
 from collections import deque
+from dataclasses import dataclass
+from typing import List, Dict
+
+@dataclass
+class CharacterProfile:
+    name: str
+    age: int
+    occupation: str
+    skills: List[str]
+    relationships: Dict[str, str]
 
 class Memory:
     def __init__(self, content, priority=0):
@@ -58,3 +68,4 @@ class CharacterMemory:
     def add_past_action(self, action, priority=0):
         memory = Memory(action, priority)
         self.past_actions.push(memory)
+
