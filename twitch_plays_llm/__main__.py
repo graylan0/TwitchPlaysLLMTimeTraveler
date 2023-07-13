@@ -8,8 +8,8 @@ from uvicorn_loguru_integration import run_uvicorn_loguru
 from .config import config
 from .llm_game import LlmGame
 from .llm_twitch_bot import LlmTwitchBot
-from .trideque import TriDeque
-from .memory import Memory
+from .character_memory import TriDeque
+from .character_memory import Memory
 
 def main():
     parser = ArgumentParser(
@@ -38,3 +38,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
