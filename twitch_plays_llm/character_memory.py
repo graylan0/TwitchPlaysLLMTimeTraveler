@@ -3,6 +3,8 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from typing import List, Dict
+import os
+from pathlib import Path
 
 @dataclass
 class CharacterProfile:
@@ -41,7 +43,7 @@ class TriDeque:
 
 class CharacterMemory:
     MAX_PAST_ACTIONS = 100  # maximum number of past actions to store in memory
-    PAST_ACTIONS_FILE = "past_actions.txt"  # file to store older actions
+    PAST_ACTIONS_FILE = os.path.join(os.path.dirname(__file__), 'datafiles', 'past_actions.txt')  # file to store older actions
 
     def __init__(self):
         self.attributes = {}
@@ -49,6 +51,12 @@ class CharacterMemory:
         self.color_code = "white"  # default color
         self.profile = CharacterProfile("John Doe", 40, "Detective", ["Investigation", "Hand-to-hand combat"], {"Sarah": "Wife", "Tom": "Partner"})
         self.thoughts_file = "thoughts.txt"
+
+        # Check if the past actions file exists, and create it if it doesn't
+        past_actions_path = Path(self.PAST_ACTIONS_FILE)
+        past_actions_path.parent.mkdir(parents=True, exist_ok=True)  # Create the directory if it doesn't exist
+        past_actions_path.touch(exist_ok=True)  # Create the file if it doesn't exist
+
 
     def update_attribute(self, attribute, value):
         self.attributes[attribute] = value
@@ -68,4 +76,3 @@ class CharacterMemory:
     def add_past_action(self, action, priority=0):
         memory = Memory(action, priority)
         self.past_actions.push(memory)
-
