@@ -1,10 +1,41 @@
+import bisect
+import time
+from collections import deque
+
+class Memory:
+    def __init__(self, content, priority=0):
+        self.content = content
+        self.priority = priority
+        self.timestamp = time.time()
+
+class TriDeque:
+    def __init__(self, maxlen):
+        self.data = deque(maxlen=maxlen)
+
+    def push(self, memory):
+        # Insert memory in order of priority
+        index = bisect.bisect([m.priority for m in self.data], memory.priority)
+        self.data.insert(index, memory)
+
+    def remove(self, memory):
+        # Remove a specific memory item
+        self.data.remove(memory)
+
+    def update_priority(self, memory, new_priority):
+        # Remove the memory item
+        self.remove(memory)
+        # Update its priority
+        memory.priority = new_priority
+        # Re-insert it with the new priority
+        self.push(memory)
+
 class CharacterMemory:
     MAX_PAST_ACTIONS = 100  # maximum number of past actions to store in memory
     PAST_ACTIONS_FILE = "past_actions.txt"  # file to store older actions
 
     def __init__(self):
         self.attributes = {}
-        self.past_actions = []
+        self.past_actions = TriDeque(self.MAX_PAST_ACTIONS)  # Initialize a TriDeque with a size of MAX_PAST_ACTIONS
         self.color_code = "white"  # default color
         self.profile = CharacterProfile("John Doe", 40, "Detective", ["Investigation", "Hand-to-hand combat"], {"Sarah": "Wife", "Tom": "Partner"})
         self.thoughts_file = "thoughts.txt"
@@ -24,9 +55,6 @@ class CharacterMemory:
         else:
             self.color_code = "white"
 
-    def add_past_action(self, action):
-        self.past_actions.append(action)
-        if len(self.past_actions) > self.MAX_PAST_ACTIONS:
-            oldest_action = self.past_actions.pop(0)  # remove the oldest action
-            with open(self.PAST_ACTIONS_FILE, "a") as file:
-                file.write(oldest_action + "\n")  #...
+    def add_past_action(self, action, priority=0):
+        memory = Memory(action, priority)
+        self.past_actions.push(memory)
